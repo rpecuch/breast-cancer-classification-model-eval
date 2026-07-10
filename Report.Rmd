@@ -60,29 +60,37 @@ The below R code block queries the GDC API to retrieve RNA sequencing data (from
 ```{r download, cache=TRUE}
 library(TCGAbiolinks)
 
-# Query GDC API for RNA seq data
-project_samples <- suppressMessages(GDCquery(project = "TCGA-BRCA", 
-                         data.category = "Transcriptome Profiling", 
-                         data.type = "Gene Expression Quantification",
-                         workflow.type = "STAR - Counts"))
-# Extract sample information
-sample_data <- getResults(project_samples)
-
-# Select 100 primary tumor samples and 100 normal samples
-tumor_cases <- TCGAquery_SampleTypes(barcode = sample_data$cases, typesample = "TP")[1:100]
-normal_cases <- TCGAquery_SampleTypes(barcode = sample_data$cases, typesample = "NT")[1:100]
-# Query for only selected samples #
-TargetSamples <- suppressMessages(GDCquery(project = "TCGA-BRCA",
-                             data.category = "Transcriptome Profiling",
-                             data.type = "Gene Expression Quantification",
-                             workflow.type = "STAR - Counts",
-                             barcode = c(tumor_cases, normal_cases)))
-
-# Download data for selected samples to GDCdata directory
-GDCdownload(TargetSamples)
-
-# Load into SummarizedExperiment object
-exp_data <- GDCprepare(TargetSamples)
+# Load TCGA transcriptomic data
+if (file.exists("tcga_brca.rds")){
+  exp_data <- readRDS("tcga_brca.rds")
+} else{
+  # Query GDC API for RNA seq data
+  project_samples <- suppressMessages(GDCquery(project = "TCGA-BRCA", 
+                           data.category = "Transcriptome Profiling", 
+                           data.type = "Gene Expression Quantification",
+                           workflow.type = "STAR - Counts"))
+  # Extract sample information
+  sample_data <- getResults(project_samples)
+  
+  # Select 100 primary tumor samples and 100 normal samples
+  tumor_cases <- TCGAquery_SampleTypes(barcode = sample_data$cases, typesample = "TP")[1:100]
+  normal_cases <- TCGAquery_SampleTypes(barcode = sample_data$cases, typesample = "NT")[1:100]
+  # Query for only selected samples #
+  TargetSamples <- suppressMessages(GDCquery(project = "TCGA-BRCA",
+                               data.category = "Transcriptome Profiling",
+                               data.type = "Gene Expression Quantification",
+                               workflow.type = "STAR - Counts",
+                               barcode = c(tumor_cases, normal_cases)))
+  
+  # Download data for selected samples to GDCdata directory
+  GDCdownload(TargetSamples)
+  
+  # Load into SummarizedExperiment object
+  exp_data <- GDCprepare(TargetSamples)
+  
+  # Save to RDS
+  saveRDS(exp_data, file = "tcga_brca.rds")
+}
 ```
 
 # Data Preparation
@@ -90,7 +98,6 @@ exp_data <- GDCprepare(TargetSamples)
 The below R code uses the TCGAanalyze_Preprocessing function to extract the expression data from the HTSeq – FPKM assay, which is normalized for transcript length and sequencing depth [1]. A boxplot is then constructed to visualize gene expression distributions across samples that have at least an average spearman correlation coefficient of 0.6 with other samples [2]. To avoid any potential issues rending the large boxplot, it is first saved to a png file then displayed below.
 
 ```{r}
-library(TCGAbiolinks)
 library(grDevices)
 
 extract_counts <- function(exp_obj){
@@ -106,7 +113,7 @@ expr_boxplot <- function(expr_data, file_path, norm=F){
   dev.off()
 }
 
-# Visualize gene expression speads for all genes
+# Visualize gene expression spreads for all genes
 expr_data <- extract_counts(exp_data)
 expr_boxplot(expr_data, "fpkm_counts_all.png")
 ```
@@ -181,7 +188,7 @@ calculate_correlation <- function(expr, var){
 }
 
 filter_corr_results <- function(df, corr_threshold){
-  df[abs(df$correlation) >= corr_threshold, ]
+  df[!is.na(df$correlation) & abs(df$correlation) >= corr_threshold, ]
 }
 
 # Extract patient data
@@ -737,15 +744,15 @@ The below R code block uses the generate_model_summary function to obtain the me
 # Function to group df and calculate mean
 generate_model_summary <- function(df, group_cols, metric_cols){
  df %>%
-    mutate(
-      model_type = case_when(
+    dplyr::mutate(
+      model_type = dplyr::case_when(
         model_type == "svm.formula" ~ paste(model_type, param_name, sep="."),
         model_type == "nn" & param_value >0 ~ "nn_hidden",
         .default = model_type
       ) 
     ) %>%
-    group_by(across(all_of(group_cols))) %>%
-    summarise(
+    dplyr::group_by(across(all_of(group_cols))) %>%
+    dplyr::summarise(
       across(
         all_of(metric_cols),
         list(

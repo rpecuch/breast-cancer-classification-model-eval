@@ -53,3 +53,5 @@ GDCdata/
 MANIFEST.txt
 Preprocessing*
 *.rds
+.Rproj.user
+Report_files/
